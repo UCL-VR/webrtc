@@ -12,7 +12,21 @@
 #include "sdk/c/api/video/video_sink_interface.h"
 
 #ifdef __cplusplus
-#include "api/video/video_buffer.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_sink_interface.h"
+#include "rtc_base/system/rtc_export.h"
+
+namespace webrtc {
+
+class RTC_EXPORT VideoBufferInterface :
+    public rtc::VideoSinkInterface<VideoFrame> {
+  public:
+    virtual std::unique_ptr<VideoFrame> MoveFrame() = 0;
+};
+
+RTC_EXPORT std::unique_ptr<VideoBufferInterface> CreateVideoBuffer();
+
+}
 
 extern "C" {
 #endif

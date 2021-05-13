@@ -15,7 +15,6 @@ rtc_source_set("c") {
     "api:libjingle_peerconnection_api",
     "api:video_codecs",
     "api/video:video_frame",
-    "api/video:video_frame_i420",
     "api/video:video_rtp_headers",
     "common_video",
     "media",

@@ -41,8 +41,6 @@ rtc_library("video_rtp_headers") {
 rtc_library("video_frame") {
   visibility = [ "*" ]
   sources = [
-    "video_buffer.cc",
-    "video_buffer.h",
     "i420_buffer.cc",
     "i420_buffer.h",
     "nv12_buffer.cc",
@@ -62,7 +60,6 @@ rtc_library("video_frame") {
     "..:array_view",
     "..:rtp_packet_info",
     "..:scoped_refptr",
-    "../../rtc_base:criticalsection",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
     "../../rtc_base/memory:aligned_malloc",
