@@ -74,6 +74,7 @@ LIB_TO_LICENSES_DICT = {
     'g722': ['modules/third_party/g722/LICENSE'],
     'ooura': ['common_audio/third_party/ooura/LICENSE'],
     'spl_sqrt_floor': ['common_audio/third_party/spl_sqrt_floor/LICENSE'],
+    'webrtc (additions made by pixiv Inc.)': ['LICENSE.pixiv'],
 
     # TODO(bugs.webrtc.org/1110): Remove this hack. This is not a lib.
     # For some reason it is listed as so in _GetThirdPartyLibraries.
@@ -123,7 +124,8 @@ class LicenseBuilder(object):
                  buildfile_dirs,
                  targets,
                  lib_to_licenses_dict=None,
-                 lib_regex_to_licenses_dict=None):
+                 lib_regex_to_licenses_dict=None,
+                 jsons=[]):
         if lib_to_licenses_dict is None:
             lib_to_licenses_dict = LIB_TO_LICENSES_DICT
 
@@ -134,6 +136,7 @@ class LicenseBuilder(object):
         self.targets = targets
         self.lib_to_licenses_dict = lib_to_licenses_dict
         self.lib_regex_to_licenses_dict = lib_regex_to_licenses_dict
+        self.jsons = jsons
 
         self.common_licenses_dict = self.lib_to_licenses_dict.copy()
         self.common_licenses_dict.update(self.lib_regex_to_licenses_dict)
@@ -194,6 +197,16 @@ class LicenseBuilder(object):
             libraries |= set(lib for lib in third_party_libs if lib)
         return libraries
 
+    def _GetThirdPartyLibrariesFromFile(self, path):
+        with open(path) as file:
+            loaded = json.load(file)
+            libraries = set()
+            for described_target in loaded.values():
+                third_party_libs = (
+                    self._ParseLibrary(dep) for dep in described_target['deps'])
+                libraries |= set(lib for lib in third_party_libs if lib)
+        return libraries
+
     def GenerateLicenseText(self, output_dir):
         # Get a list of third_party libs from gn. For fat libraries we must consider
         # all architectures, hence the multiple buildfile directories.
@@ -202,6 +215,8 @@ class LicenseBuilder(object):
             for target in self.targets:
                 third_party_libs |= self._GetThirdPartyLibraries(
                     buildfile, target)
+        for path in self.jsons:
+            third_party_libs |= self._GetThirdPartyLibrariesFromFile(path)
         assert len(third_party_libs) > 0
 
         missing_licenses = third_party_libs - set(
@@ -214,6 +229,7 @@ class LicenseBuilder(object):
 
         # Put webrtc at the front of the list.
         license_libs = sorted(third_party_libs)
+        license_libs.insert(0, 'webrtc (additions made by pixiv Inc.)')
         license_libs.insert(0, 'webrtc')
 
         logging.info('List of licenses: %s', ', '.join(license_libs))
