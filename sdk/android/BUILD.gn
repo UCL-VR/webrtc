@@ -139,7 +139,7 @@ if (is_android) {
   rtc_shared_library("libjingle_peerconnection_so") {
     sources = [ "src/jni/jni_onload.cc" ]
     suppressed_configs += [ "//build/config/android:hide_all_but_jni_onload" ]
-    configs += [ "//build/config/android:hide_all_but_jni" ]
+    
     ldflags = [
       "-lEGL",
       "-Wl,--build-id",
