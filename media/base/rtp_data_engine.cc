@@ -62,7 +62,7 @@ RtpDataMediaChannel::RtpDataMediaChannel(const MediaConfig& config)
 void RtpDataMediaChannel::Construct() {
   sending_ = false;
   receiving_ = false;
-  send_limiter_.reset(new rtc::DataRateLimiter(kDataMaxBandwidth / 8, 1.0));
+  send_limiter_.reset(new rtc::DataRateLimiter(kRtpDataMaxBandwidth / 8, 1.0));
 }
 
 RtpDataMediaChannel::~RtpDataMediaChannel() {
@@ -196,6 +196,8 @@ bool RtpDataMediaChannel::RemoveRecvStream(uint32_t ssrc) {
 
 // Not implemented.
 void RtpDataMediaChannel::ResetUnsignaledRecvStream() {}
+void RtpDataMediaChannel::OnDemuxerCriteriaUpdatePending() {}
+void RtpDataMediaChannel::OnDemuxerCriteriaUpdateComplete() {}
 
 void RtpDataMediaChannel::OnPacketReceived(rtc::CopyOnWriteBuffer packet,
                                            int64_t /* packet_time_us */) {
@@ -245,7 +247,7 @@ void RtpDataMediaChannel::OnPacketReceived(rtc::CopyOnWriteBuffer packet,
 
 bool RtpDataMediaChannel::SetMaxSendBandwidth(int bps) {
   if (bps <= 0) {
-    bps = kDataMaxBandwidth;
+    bps = kRtpDataMaxBandwidth;
   }
   send_limiter_.reset(new rtc::DataRateLimiter(bps / 8, 1.0));
   RTC_LOG(LS_INFO) << "RtpDataMediaChannel::SetSendBandwidth to " << bps
@@ -312,7 +314,7 @@ bool RtpDataMediaChannel::SendData(const SendDataParams& params,
                                              &header.timestamp);
 
   rtc::CopyOnWriteBuffer packet(kMinRtpPacketLen, packet_len);
-  if (!SetRtpHeader(packet.data(), packet.size(), header)) {
+  if (!SetRtpHeader(packet.MutableData(), packet.size(), header)) {
     return false;
   }
   packet.AppendData(kReservedSpace);

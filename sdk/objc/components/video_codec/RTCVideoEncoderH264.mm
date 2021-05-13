@@ -794,7 +794,6 @@ NSUInteger GetMaxSampleRate(const webrtc::H264::ProfileLevelId &profile_level_id
                                          }];
   frame.encodedWidth = width;
   frame.encodedHeight = height;
-  frame.completeFrame = YES;
   frame.frameType = isKeyframe ? RTCFrameTypeVideoFrameKey : RTCFrameTypeVideoFrameDelta;
   frame.captureTimeMs = renderTimeMs;
   frame.timeStamp = timestamp;
@@ -803,14 +802,10 @@ NSUInteger GetMaxSampleRate(const webrtc::H264::ProfileLevelId &profile_level_id
                                                                   RTCVideoContentTypeUnspecified;
   frame.flags = webrtc::VideoSendTiming::kInvalid;
 
-  int qp;
-  _h264BitstreamParser.ParseBitstream(buffer->data(), buffer->size());
-  _h264BitstreamParser.GetLastSliceQp(&qp);
-  frame.qp = @(qp);
+  _h264BitstreamParser.ParseBitstream(*buffer);
+  frame.qp = @(_h264BitstreamParser.GetLastSliceQp().value_or(-1));
 
-  RTC_OBJC_TYPE(RTCRtpFragmentationHeader) *header =
-      [[RTC_OBJC_TYPE(RTCRtpFragmentationHeader) alloc] init];
-  BOOL res = _callback(frame, codecSpecificInfo, header);
+  BOOL res = _callback(frame, codecSpecificInfo);
   if (!res) {
     RTC_LOG(LS_ERROR) << "Encode callback failed";
     return;

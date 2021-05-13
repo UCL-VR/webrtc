@@ -19,7 +19,6 @@
 
 #include "api/audio/audio_mixer.h"
 #include "modules/audio_mixer/default_output_rate_calculator.h"
-#include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/task_queue_for_test.h"
@@ -105,7 +104,8 @@ class MockMixerAudioSource : public ::testing::NiceMock<AudioMixer::Source> {
 class CustomRateCalculator : public OutputRateCalculator {
  public:
   explicit CustomRateCalculator(int rate) : rate_(rate) {}
-  int CalculateOutputRate(const std::vector<int>& preferred_rates) override {
+  int CalculateOutputRateFromRange(
+      rtc::ArrayView<const int> preferred_rates) override {
     return rate_;
   }
 
@@ -598,8 +598,8 @@ TEST(AudioMixer, MultipleChannelsManyParticipants) {
 class HighOutputRateCalculator : public OutputRateCalculator {
  public:
   static const int kDefaultFrequency = 76000;
-  int CalculateOutputRate(
-      const std::vector<int>& preferred_sample_rates) override {
+  int CalculateOutputRateFromRange(
+      rtc::ArrayView<const int> preferred_sample_rates) override {
     return kDefaultFrequency;
   }
   ~HighOutputRateCalculator() override {}

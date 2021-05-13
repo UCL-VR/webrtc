@@ -10,16 +10,22 @@
 
 #include "pc/rtp_transceiver.h"
 
+#include <iterator>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/algorithm/container.h"
 #include "api/rtp_parameters.h"
+#include "api/sequence_checker.h"
+#include "media/base/codec.h"
+#include "media/base/media_constants.h"
 #include "pc/channel_manager.h"
 #include "pc/rtp_media_utils.h"
-#include "pc/rtp_parameters_conversion.h"
+#include "pc/session_description.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/thread.h"
 
 namespace webrtc {
 namespace {
@@ -119,12 +125,14 @@ RtpTransceiver::RtpTransceiver(
     rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
         receiver,
     cricket::ChannelManager* channel_manager,
-    std::vector<RtpHeaderExtensionCapability> header_extensions_offered)
+    std::vector<RtpHeaderExtensionCapability> header_extensions_offered,
+    std::function<void()> on_negotiation_needed)
     : thread_(GetCurrentTaskQueueOrThread()),
       unified_plan_(true),
       media_type_(sender->media_type()),
       channel_manager_(channel_manager),
-      header_extensions_to_offer_(std::move(header_extensions_offered)) {
+      header_extensions_to_offer_(std::move(header_extensions_offered)),
+      on_negotiation_needed_(std::move(on_negotiation_needed)) {
   RTC_DCHECK(media_type_ == cricket::MEDIA_TYPE_AUDIO ||
              media_type_ == cricket::MEDIA_TYPE_VIDEO);
   RTC_DCHECK_EQ(sender->media_type(), receiver->media_type());
@@ -141,6 +149,8 @@ void RtpTransceiver::SetChannel(cricket::ChannelInterface* channel) {
   if (stopped_ && channel) {
     return;
   }
+
+  RTC_LOG_THREAD_BLOCK_COUNT();
 
   if (channel) {
     RTC_DCHECK_EQ(media_type(), channel->media_type());
@@ -162,14 +172,21 @@ void RtpTransceiver::SetChannel(cricket::ChannelInterface* channel) {
                                                  : nullptr);
   }
 
+  RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(0);
+
   for (const auto& receiver : receivers_) {
     if (!channel_) {
+      // TODO(tommi): This can internally block and hop to the worker thread.
+      // It's likely that SetMediaChannel also does that, so perhaps we should
+      // require SetMediaChannel(nullptr) to also Stop() and skip this call.
       receiver->internal()->Stop();
     }
 
     receiver->internal()->SetMediaChannel(channel_ ? channel_->media_channel()
                                                    : nullptr);
   }
+
+  RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(receivers_.size() * 2);
 }
 
 void RtpTransceiver::AddSender(
@@ -314,7 +331,7 @@ RTCError RtpTransceiver::SetDirectionWithError(
   }
 
   direction_ = new_direction;
-  SignalNegotiationNeeded();
+  on_negotiation_needed_();
 
   return RTCError::OK();
 }
@@ -378,7 +395,7 @@ RTCError RtpTransceiver::StopStandard() {
   // 5. Stop sending and receiving given transceiver, and update the
   // negotiation-needed flag for connection.
   StopSendingAndReceiving();
-  SignalNegotiationNeeded();
+  on_negotiation_needed_();
 
   return RTCError::OK();
 }
@@ -453,6 +470,17 @@ RtpTransceiver::HeaderExtensionsToOffer() const {
   return header_extensions_to_offer_;
 }
 
+std::vector<RtpHeaderExtensionCapability>
+RtpTransceiver::HeaderExtensionsNegotiated() const {
+  if (!channel_)
+    return {};
+  std::vector<RtpHeaderExtensionCapability> result;
+  for (const auto& ext : channel_->GetNegotiatedRtpHeaderExtensions()) {
+    result.emplace_back(ext.uri, ext.id, RtpTransceiverDirection::kSendRecv);
+  }
+  return result;
+}
+
 RTCError RtpTransceiver::SetOfferedRtpHeaderExtensions(
     rtc::ArrayView<const RtpHeaderExtensionCapability>
         header_extensions_to_offer) {
@@ -470,7 +498,7 @@ RTCError RtpTransceiver::SetOfferedRtpHeaderExtensions(
         header_extensions_to_offer_.begin(), header_extensions_to_offer_.end(),
         [&entry](const auto& offered) { return entry.uri == offered.uri; });
     if (it == header_extensions_to_offer_.end()) {
-      return RTCError(RTCErrorType::INVALID_PARAMETER,
+      return RTCError(RTCErrorType::UNSUPPORTED_PARAMETER,
                       "Attempted to modify an unoffered extension.");
     }
 

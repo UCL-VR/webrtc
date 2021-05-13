@@ -11,14 +11,32 @@
 #ifndef PC_RTP_TRANSCEIVER_H_
 #define PC_RTP_TRANSCEIVER_H_
 
+#include <stddef.h>
+
+#include <algorithm>
+#include <functional>
 #include <string>
 #include <vector>
 
+#include "absl/types/optional.h"
+#include "api/array_view.h"
+#include "api/media_types.h"
+#include "api/proxy.h"
+#include "api/rtc_error.h"
+#include "api/rtp_parameters.h"
+#include "api/rtp_receiver_interface.h"
+#include "api/rtp_sender_interface.h"
+#include "api/rtp_transceiver_direction.h"
 #include "api/rtp_transceiver_interface.h"
+#include "api/scoped_refptr.h"
+#include "api/task_queue/task_queue_base.h"
 #include "pc/channel_interface.h"
 #include "pc/channel_manager.h"
 #include "pc/rtp_receiver.h"
 #include "pc/rtp_sender.h"
+#include "rtc_base/ref_counted_object.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -71,7 +89,8 @@ class RtpTransceiver final
       rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
           receiver,
       cricket::ChannelManager* channel_manager,
-      std::vector<RtpHeaderExtensionCapability> HeaderExtensionsToOffer);
+      std::vector<RtpHeaderExtensionCapability> HeaderExtensionsToOffer,
+      std::function<void()> on_negotiation_needed);
   ~RtpTransceiver() override;
 
   // Returns the Voice/VideoChannel set for this transceiver. May be null if
@@ -183,7 +202,7 @@ class RtpTransceiver final
 
   // Fired when the RtpTransceiver state changes such that negotiation is now
   // needed (e.g., in response to a direction change).
-  sigslot::signal0<> SignalNegotiationNeeded;
+  //  sigslot::signal0<> SignalNegotiationNeeded;
 
   // RtpTransceiverInterface implementation.
   cricket::MediaType media_type() const override;
@@ -205,6 +224,8 @@ class RtpTransceiver final
     return codec_preferences_;
   }
   std::vector<RtpHeaderExtensionCapability> HeaderExtensionsToOffer()
+      const override;
+  std::vector<RtpHeaderExtensionCapability> HeaderExtensionsNegotiated()
       const override;
   RTCError SetOfferedRtpHeaderExtensions(
       rtc::ArrayView<const RtpHeaderExtensionCapability>
@@ -240,10 +261,12 @@ class RtpTransceiver final
   cricket::ChannelManager* channel_manager_ = nullptr;
   std::vector<RtpCodecCapability> codec_preferences_;
   std::vector<RtpHeaderExtensionCapability> header_extensions_to_offer_;
+  const std::function<void()> on_negotiation_needed_;
 };
 
-BEGIN_SIGNALING_PROXY_MAP(RtpTransceiver)
-PROXY_SIGNALING_THREAD_DESTRUCTOR()
+BEGIN_PRIMARY_PROXY_MAP(RtpTransceiver)
+
+PROXY_PRIMARY_THREAD_DESTRUCTOR()
 BYPASS_PROXY_CONSTMETHOD0(cricket::MediaType, media_type)
 PROXY_CONSTMETHOD0(absl::optional<std::string>, mid)
 PROXY_CONSTMETHOD0(rtc::scoped_refptr<RtpSenderInterface>, sender)
@@ -262,6 +285,8 @@ PROXY_METHOD1(webrtc::RTCError,
 PROXY_CONSTMETHOD0(std::vector<RtpCodecCapability>, codec_preferences)
 PROXY_CONSTMETHOD0(std::vector<RtpHeaderExtensionCapability>,
                    HeaderExtensionsToOffer)
+PROXY_CONSTMETHOD0(std::vector<RtpHeaderExtensionCapability>,
+                   HeaderExtensionsNegotiated)
 PROXY_METHOD1(webrtc::RTCError,
               SetOfferedRtpHeaderExtensions,
               rtc::ArrayView<const RtpHeaderExtensionCapability>)

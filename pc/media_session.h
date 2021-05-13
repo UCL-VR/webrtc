@@ -18,14 +18,22 @@
 #include <string>
 #include <vector>
 
+#include "api/crypto/crypto_options.h"
 #include "api/media_types.h"
+#include "api/rtp_parameters.h"
+#include "api/rtp_transceiver_direction.h"
 #include "media/base/media_constants.h"
 #include "media/base/media_engine.h"  // For DataChannelType
+#include "media/base/rid_description.h"
+#include "media/base/stream_params.h"
 #include "p2p/base/ice_credentials_iterator.h"
+#include "p2p/base/transport_description.h"
 #include "p2p/base/transport_description_factory.h"
+#include "p2p/base/transport_info.h"
 #include "pc/jsep_transport.h"
 #include "pc/media_protocol_names.h"
 #include "pc/session_description.h"
+#include "pc/simulcast_description.h"
 #include "rtc_base/unique_id_generator.h"
 
 namespace cricket {
@@ -283,6 +291,14 @@ class MediaSessionDescriptionFactory {
       SessionDescription* desc,
       IceCredentialsIterator* ice_credentials) const;
 
+  bool AddUnsupportedContentForOffer(
+      const MediaDescriptionOptions& media_description_options,
+      const MediaSessionOptions& session_options,
+      const ContentInfo* current_content,
+      const SessionDescription* current_description,
+      SessionDescription* desc,
+      IceCredentialsIterator* ice_credentials) const;
+
   bool AddAudioContentForAnswer(
       const MediaDescriptionOptions& media_description_options,
       const MediaSessionOptions& session_options,
@@ -324,6 +340,17 @@ class MediaSessionDescriptionFactory {
       SessionDescription* answer,
       IceCredentialsIterator* ice_credentials) const;
 
+  bool AddUnsupportedContentForAnswer(
+      const MediaDescriptionOptions& media_description_options,
+      const MediaSessionOptions& session_options,
+      const ContentInfo* offer_content,
+      const SessionDescription* offer_description,
+      const ContentInfo* current_content,
+      const SessionDescription* current_description,
+      const TransportInfo* bundle_transport,
+      SessionDescription* answer,
+      IceCredentialsIterator* ice_credentials) const;
+
   void ComputeAudioCodecsIntersectionAndUnion();
 
   void ComputeVideoCodecsIntersectionAndUnion();
@@ -356,6 +383,7 @@ bool IsMediaContent(const ContentInfo* content);
 bool IsAudioContent(const ContentInfo* content);
 bool IsVideoContent(const ContentInfo* content);
 bool IsDataContent(const ContentInfo* content);
+bool IsUnsupportedContent(const ContentInfo* content);
 const ContentInfo* GetFirstMediaContent(const ContentInfos& contents,
                                         MediaType media_type);
 const ContentInfo* GetFirstAudioContent(const ContentInfos& contents);

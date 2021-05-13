@@ -254,6 +254,12 @@ class RTC_EXPORT VideoEncoder {
     // in such case the encoder should return
     // WEBRTC_VIDEO_CODEC_ERR_SIMULCAST_PARAMETERS_NOT_SUPPORTED.
     bool supports_simulcast;
+
+    // The list of pixel formats preferred by the encoder. It is assumed that if
+    // the list is empty and supports_native_handle is false, then {I420} is the
+    // preferred pixel format. The order of the formats does not matter.
+    absl::InlinedVector<VideoFrameBuffer::Type, kMaxPreferredPixelFormats>
+        preferred_pixel_formats;
   };
 
   struct RTC_EXPORT RateControlParameters {
@@ -358,7 +364,7 @@ class RTC_EXPORT VideoEncoder {
   // TODO(bugs.webrtc.org/10720): After updating downstream projects and posting
   // an announcement to discuss-webrtc, remove the three-parameters variant
   // and make the two-parameters variant pure-virtual.
-  /* RTC_DEPRECATED */ virtual int32_t InitEncode(
+  /* ABSL_DEPRECATED("bugs.webrtc.org/10720") */ virtual int32_t InitEncode(
       const VideoCodec* codec_settings,
       int32_t number_of_cores,
       size_t max_payload_size);

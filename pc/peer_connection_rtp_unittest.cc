@@ -164,6 +164,28 @@ class PeerConnectionRtpTestUnifiedPlan : public PeerConnectionRtpBaseTest {
  protected:
   PeerConnectionRtpTestUnifiedPlan()
       : PeerConnectionRtpBaseTest(SdpSemantics::kUnifiedPlan) {}
+
+  // Helper to emulate an SFU that rejects an offered media section
+  // in answer.
+  bool ExchangeOfferAnswerWhereRemoteStopsTransceiver(
+      PeerConnectionWrapper* caller,
+      PeerConnectionWrapper* callee,
+      size_t mid_to_stop) {
+    auto offer = caller->CreateOffer();
+    caller->SetLocalDescription(CloneSessionDescription(offer.get()));
+    callee->SetRemoteDescription(std::move(offer));
+    EXPECT_LT(mid_to_stop, callee->pc()->GetTransceivers().size());
+    // Must use StopInternal in order to do instant reject.
+    callee->pc()->GetTransceivers()[mid_to_stop]->StopInternal();
+    auto answer = callee->CreateAnswer();
+    EXPECT_TRUE(answer);
+    bool set_local_answer =
+        callee->SetLocalDescription(CloneSessionDescription(answer.get()));
+    EXPECT_TRUE(set_local_answer);
+    bool set_remote_answer = caller->SetRemoteDescription(std::move(answer));
+    EXPECT_TRUE(set_remote_answer);
+    return set_remote_answer;
+  }
 };
 
 // These tests cover |webrtc::PeerConnectionObserver| callbacks firing upon
@@ -756,6 +778,56 @@ TEST_F(PeerConnectionRtpTestUnifiedPlan, UnsignaledSsrcCreatesReceiverStreams) {
   ASSERT_EQ(receivers[0]->streams().size(), 2u);
   EXPECT_EQ(receivers[0]->streams()[0]->id(), kStreamId1);
   EXPECT_EQ(receivers[0]->streams()[1]->id(), kStreamId2);
+}
+TEST_F(PeerConnectionRtpTestUnifiedPlan, TracksDoNotEndWhenSsrcChanges) {
+  constexpr uint32_t kFirstMungedSsrc = 1337u;
+
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+
+  // Caller offers to receive audio and video.
+  RtpTransceiverInit init;
+  init.direction = RtpTransceiverDirection::kRecvOnly;
+  caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO, init);
+  caller->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init);
+
+  // Callee wants to send audio and video tracks.
+  callee->AddTrack(callee->CreateAudioTrack("audio_track"), {});
+  callee->AddTrack(callee->CreateVideoTrack("video_track"), {});
+
+  // Do inittial offer/answer exchange.
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+  ASSERT_TRUE(
+      caller->SetRemoteDescription(callee->CreateAnswerAndSetAsLocal()));
+  ASSERT_EQ(caller->observer()->add_track_events_.size(), 2u);
+  ASSERT_EQ(caller->pc()->GetReceivers().size(), 2u);
+
+  // Do a follow-up offer/answer exchange where the SSRCs are modified.
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+  auto answer = callee->CreateAnswer();
+  auto& contents = answer->description()->contents();
+  ASSERT_TRUE(!contents.empty());
+  for (size_t i = 0; i < contents.size(); ++i) {
+    auto& mutable_streams = contents[i].media_description()->mutable_streams();
+    ASSERT_EQ(mutable_streams.size(), 1u);
+    mutable_streams[0].ssrcs = {kFirstMungedSsrc + static_cast<uint32_t>(i)};
+  }
+  ASSERT_TRUE(
+      callee->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(
+      caller->SetRemoteDescription(CloneSessionDescription(answer.get())));
+
+  // No furher track events should fire because we never changed direction, only
+  // SSRCs.
+  ASSERT_EQ(caller->observer()->add_track_events_.size(), 2u);
+  // We should have the same number of receivers as before.
+  auto receivers = caller->pc()->GetReceivers();
+  ASSERT_EQ(receivers.size(), 2u);
+  // The tracks are still alive.
+  EXPECT_EQ(receivers[0]->track()->state(),
+            MediaStreamTrackInterface::TrackState::kLive);
+  EXPECT_EQ(receivers[1]->track()->state(),
+            MediaStreamTrackInterface::TrackState::kLive);
 }
 
 // Tests that with Unified Plan if the the stream id changes for a track when
@@ -1573,6 +1645,42 @@ TEST_F(PeerConnectionRtpTestUnifiedPlan,
   EXPECT_EQ(0U, callee->pc()->GetReceivers().size());
 }
 
+TEST_F(PeerConnectionRtpTestUnifiedPlan,
+       SetLocalDescriptionWorksAfterRepeatedAddRemove) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+  auto video_track = caller->CreateVideoTrack("v");
+  auto track = caller->CreateAudioTrack("a");
+  caller->AddTransceiver(video_track);
+  auto transceiver = caller->AddTransceiver(track);
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  caller->pc()->RemoveTrack(transceiver->sender());
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  caller->AddTrack(track);
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  caller->pc()->RemoveTrack(transceiver->sender());
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+}
+
+// This is a repro of Chromium bug https://crbug.com/1134686
+TEST_F(PeerConnectionRtpTestUnifiedPlan,
+       SetLocalDescriptionWorksAfterRepeatedAddRemoveWithRemoteReject) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+  auto video_track = caller->CreateVideoTrack("v");
+  auto track = caller->CreateAudioTrack("a");
+  caller->AddTransceiver(video_track);
+  auto transceiver = caller->AddTransceiver(track);
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  caller->pc()->RemoveTrack(transceiver->sender());
+  ExchangeOfferAnswerWhereRemoteStopsTransceiver(caller.get(), callee.get(), 1);
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  caller->AddTrack(track);
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  caller->pc()->RemoveTrack(transceiver->sender());
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+}
+
 // Test that AddTransceiver fails if trying to use unimplemented RTP encoding
 // parameters with the send_encodings parameters.
 TEST_F(PeerConnectionRtpTestUnifiedPlan,
@@ -1786,7 +1894,7 @@ TEST_F(PeerConnectionMsidSignalingTest, PureUnifiedPlanToUs) {
 
 class SdpFormatReceivedTest : public PeerConnectionRtpTestUnifiedPlan {};
 
-#ifdef HAVE_SCTP
+#ifdef WEBRTC_HAVE_SCTP
 TEST_F(SdpFormatReceivedTest, DataChannelOnlyIsReportedAsNoTracks) {
   auto caller = CreatePeerConnectionWithUnifiedPlan();
   caller->CreateDataChannel("dc");
@@ -1798,7 +1906,7 @@ TEST_F(SdpFormatReceivedTest, DataChannelOnlyIsReportedAsNoTracks) {
       metrics::Samples("WebRTC.PeerConnection.SdpFormatReceived"),
       ElementsAre(Pair(kSdpFormatReceivedNoTracks, 1)));
 }
-#endif  // HAVE_SCTP
+#endif  // WEBRTC_HAVE_SCTP
 
 TEST_F(SdpFormatReceivedTest, SimpleUnifiedPlanIsReportedAsSimple) {
   auto caller = CreatePeerConnectionWithUnifiedPlan();
@@ -1853,6 +1961,19 @@ TEST_F(SdpFormatReceivedTest, ComplexPlanBIsReportedAsComplexPlanB) {
   EXPECT_METRIC_THAT(
       metrics::Samples("WebRTC.PeerConnection.SdpFormatReceived"),
       ElementsAre(Pair(kSdpFormatReceivedComplexPlanB, 1)));
+}
+
+TEST_F(SdpFormatReceivedTest, AnswerIsReported) {
+  auto caller = CreatePeerConnectionWithPlanB();
+  caller->AddAudioTrack("audio");
+  caller->AddVideoTrack("video");
+  auto callee = CreatePeerConnectionWithUnifiedPlan();
+
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+  ASSERT_TRUE(caller->SetRemoteDescription(callee->CreateAnswer()));
+  EXPECT_METRIC_THAT(
+      metrics::Samples("WebRTC.PeerConnection.SdpFormatReceivedAnswer"),
+      ElementsAre(Pair(kSdpFormatReceivedSimple, 1)));
 }
 
 // Sender setups in a call.

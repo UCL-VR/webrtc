@@ -28,6 +28,7 @@
 #include "modules/rtp_rtcp/source/rtp_sequence_number_map.h"
 #include "modules/rtp_rtcp/source/video_fec_generator.h"
 #include "rtc_base/constructor_magic.h"
+#include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
 
@@ -144,8 +145,33 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
     // overhead.
     bool enable_rtx_padding_prioritization = true;
 
+    // Estimate RTT as non-sender as described in
+    // https://tools.ietf.org/html/rfc3611#section-4.4 and #section-4.5
+    bool non_sender_rtt_measurement = false;
+
    private:
     RTC_DISALLOW_COPY_AND_ASSIGN(Configuration);
+  };
+
+  // Stats for RTCP sender reports (SR) for a specific SSRC.
+  // Refer to https://tools.ietf.org/html/rfc3550#section-6.4.1.
+  struct SenderReportStats {
+    // Arrival NPT timestamp for the last received RTCP SR.
+    NtpTime last_arrival_timestamp;
+    // Received (a.k.a., remote) NTP timestamp for the last received RTCP SR.
+    NtpTime last_remote_timestamp;
+    // Total number of RTP data packets transmitted by the sender since starting
+    // transmission up until the time this SR packet was generated. The count
+    // should be reset if the sender changes its SSRC identifier.
+    uint32_t packets_sent;
+    // Total number of payload octets (i.e., not including header or padding)
+    // transmitted in RTP data packets by the sender since starting transmission
+    // up until the time this SR packet was generated. The count should be reset
+    // if the sender changes its SSRC identifier.
+    uint64_t bytes_sent;
+    // Total number of RTCP SR blocks received.
+    // https://www.w3.org/TR/webrtc-stats/#dom-rtcremoteoutboundrtpstreamstats-reportssent.
+    uint64_t reports_count;
   };
 
   // **************************************************************************
@@ -357,23 +383,13 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
       StreamDataCounters* rtp_counters,
       StreamDataCounters* rtx_counters) const = 0;
 
-  // Returns received RTCP report block.
-  // Returns -1 on failure else 0.
-  // TODO(https://crbug.com/webrtc/10678): Remove this in favor of
-  // GetLatestReportBlockData().
-  virtual int32_t RemoteRTCPStat(
-      std::vector<RTCPReportBlock>* receive_blocks) const = 0;
   // A snapshot of Report Blocks with additional data of interest to statistics.
   // Within this list, the sender-source SSRC pair is unique and per-pair the
   // ReportBlockData represents the latest Report Block that was received for
   // that pair.
   virtual std::vector<ReportBlockData> GetLatestReportBlockData() const = 0;
-
-  // (XR) Sets Receiver Reference Time Report (RTTR) status.
-  virtual void SetRtcpXrRrtrStatus(bool enable) = 0;
-
-  // Returns current Receiver Reference Time Report (RTTR) status.
-  virtual bool RtcpXrRrtrStatus() const = 0;
+  // Returns stats based on the received RTCP SRs.
+  virtual absl::optional<SenderReportStats> GetSenderReportStats() const = 0;
 
   // (REMB) Receiver Estimated Max Bitrate.
   // Schedules sending REMB on next and following sender/receiver reports.
@@ -398,9 +414,6 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
   // Store the sent packets, needed to answer to a Negative acknowledgment
   // requests.
   virtual void SetStorePacketsStatus(bool enable, uint16_t numberToStore) = 0;
-
-  // Returns true if the module is configured to store packets.
-  virtual bool StorePackets() const = 0;
 
   virtual void SetVideoBitrateAllocation(
       const VideoBitrateAllocation& bitrate) = 0;

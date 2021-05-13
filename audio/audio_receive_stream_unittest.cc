@@ -36,6 +36,7 @@ namespace {
 
 using ::testing::_;
 using ::testing::FloatEq;
+using ::testing::NiceMock;
 using ::testing::Return;
 
 AudioDecodingCallStats MakeAudioDecodeStatsForTest() {
@@ -67,8 +68,8 @@ const std::pair<int, SdpAudioFormat> kReceiveCodec = {
     123,
     {"codec_name_recv", 96000, 0}};
 const NetworkStatistics kNetworkStats = {
-    123, 456, false, 789012, 3456, 123, 456, 789, 543, 123, 432, 321, 123, 101,
-    789, 12,  345,   678,    901,  0,   -1,  -1,  -1,  -1,  0,   0,   0,   0};
+    123, 456, false, 789012, 3456, 123, 456, 789, 543, 123, 432, 321, 123,
+    101, 789, 12,    345,    678,  901, 0,   -1,  -1,  0,   0,   0,   0};
 const AudioDecodingCallStats kAudioDecodeStats = MakeAudioDecodeStatsForTest();
 
 struct ConfigHelper {
@@ -86,7 +87,7 @@ struct ConfigHelper {
     config.audio_processing =
         use_null_audio_processing
             ? nullptr
-            : new rtc::RefCountedObject<MockAudioProcessing>();
+            : new rtc::RefCountedObject<NiceMock<MockAudioProcessing>>();
     config.audio_device_module =
         new rtc::RefCountedObject<testing::NiceMock<MockAudioDeviceModule>>();
     audio_state_ = AudioState::Create(config);
@@ -105,6 +106,7 @@ struct ConfigHelper {
         }));
     EXPECT_CALL(*channel_receive_, SetDepacketizerToDecoderFrameTransformer(_))
         .Times(1);
+    EXPECT_CALL(*channel_receive_, SetSourceTracker(_));
 
     stream_config_.rtp.local_ssrc = kLocalSsrc;
     stream_config_.rtp.remote_ssrc = kRemoteSsrc;

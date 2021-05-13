@@ -11,15 +11,14 @@
 #ifndef SDK_OBJC_NATIVE_SRC_AUDIO_AUDIO_DEVICE_IOS_H_
 #define SDK_OBJC_NATIVE_SRC_AUDIO_AUDIO_DEVICE_IOS_H_
 
-#include <CoreMedia/CoreMedia.h>
 #include <memory>
 
+#include "api/sequence_checker.h"
 #include "audio_session_observer.h"
 #include "modules/audio_device/audio_device_generic.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
-#include "rtc_base/thread_checker.h"
 #include "sdk/objc/base/RTCMacros.h"
 #include "voice_processing_audio_unit.h"
 
@@ -49,7 +48,7 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
                        public VoiceProcessingAudioUnitObserver,
                        public rtc::MessageHandler {
  public:
-  AudioDeviceIOS();
+  explicit AudioDeviceIOS(bool bypass_voice_processing);
   ~AudioDeviceIOS() override;
 
   void AttachAudioBuffer(AudioDeviceBuffer* audioBuffer) override;
@@ -147,8 +146,6 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void OnCanPlayOrRecordChange(bool can_play_or_record) override;
   void OnChangedOutputVolume() override;
 
-  void OnDeliverRecordedExternalData(CMSampleBufferRef sample_buffer);
-
   // VoiceProcessingAudioUnitObserver methods.
   OSStatus OnDeliverRecordedData(AudioUnitRenderActionFlags* flags,
                                  const AudioTimeStamp* time_stamp,
@@ -165,8 +162,6 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void OnMessage(rtc::Message* msg) override;
 
   bool IsInterrupted();
-
-  OSType audio_unit_sub_type;
 
  private:
   // Called by the relevant AudioSessionObserver methods on |thread_|.
@@ -197,6 +192,10 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
 
   // Configures the audio session for WebRTC.
   bool ConfigureAudioSession();
+
+  // Like above, but requires caller to already hold session lock.
+  bool ConfigureAudioSessionLocked();
+
   // Unconfigures the audio session.
   void UnconfigureAudioSession();
 
@@ -210,12 +209,15 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   // Resets thread-checkers before a call is restarted.
   void PrepareForNewStart();
 
+  // Determines whether voice processing should be enabled or disabled.
+  const bool bypass_voice_processing_;
+
   // Ensures that methods are called from the same thread as this object is
   // created on.
-  rtc::ThreadChecker thread_checker_;
+  SequenceChecker thread_checker_;
 
-  // Native audio I/O critical section.
-  rtc::CriticalSection io_lock_;
+  // Native I/O audio thread checker.
+  SequenceChecker io_thread_checker_;
 
   // Thread that this object is created on.
   rtc::Thread* thread_;
@@ -288,7 +290,7 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
 
   // Counts number of detected audio glitches on the playout side.
   int64_t num_detected_playout_glitches_ RTC_GUARDED_BY(thread_checker_);
-  int64_t last_playout_time_ RTC_GUARDED_BY(io_lock_);
+  int64_t last_playout_time_ RTC_GUARDED_BY(io_thread_checker_);
 
   // Counts number of playout callbacks per call.
   // The value isupdated on the native I/O thread and later read on the

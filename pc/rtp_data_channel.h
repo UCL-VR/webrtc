@@ -11,18 +11,25 @@
 #ifndef PC_RTP_DATA_CHANNEL_H_
 #define PC_RTP_DATA_CHANNEL_H_
 
+#include <stdint.h>
+
 #include <memory>
 #include <string>
 
+#include "absl/types/optional.h"
 #include "api/data_channel_interface.h"
 #include "api/priority.h"
+#include "api/rtc_error.h"
 #include "api/scoped_refptr.h"
 #include "api/transport/data_channel_transport_interface.h"
 #include "media/base/media_channel.h"
 #include "pc/channel.h"
 #include "pc/data_channel_utils.h"
 #include "rtc_base/async_invoker.h"
+#include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -191,7 +198,6 @@ class RtpDataChannel : public DataChannelInterface,
   uint32_t send_ssrc_ RTC_GUARDED_BY(signaling_thread_) = 0;
   uint32_t receive_ssrc_ RTC_GUARDED_BY(signaling_thread_) = 0;
   PacketQueue queued_received_data_ RTC_GUARDED_BY(signaling_thread_);
-  rtc::AsyncInvoker invoker_ RTC_GUARDED_BY(signaling_thread_);
 };
 
 }  // namespace webrtc

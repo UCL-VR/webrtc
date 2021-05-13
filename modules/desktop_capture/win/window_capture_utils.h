@@ -71,10 +71,23 @@ bool IsWindowMaximized(HWND window, bool* result);
 // visible, and that it is not minimized.
 bool IsWindowValidAndVisible(HWND window);
 
-// This function is passed into the EnumWindows API and filters out windows that
-// we don't want to capture, e.g. minimized or unresponsive windows and the
-// Start menu.
-BOOL CALLBACK FilterUncapturableWindows(HWND hwnd, LPARAM param);
+// Checks if a window responds to a message within 50ms.
+bool IsWindowResponding(HWND window);
+
+enum GetWindowListFlags {
+  kNone = 0x00,
+  kIgnoreUntitled = 1 << 0,
+  kIgnoreUnresponsive = 1 << 1,
+};
+
+// Retrieves the list of top-level windows on the screen.
+// Some windows will be ignored:
+// - Those that are invisible or minimized.
+// - Program Manager & Start menu.
+// - [with kIgnoreUntitled] windows with no title.
+// - [with kIgnoreUnresponsive] windows that unresponsive.
+// Returns false if native APIs failed.
+bool GetWindowList(int flags, DesktopCapturer::SourceList* windows);
 
 typedef HRESULT(WINAPI* DwmIsCompositionEnabledFunc)(BOOL* enabled);
 typedef HRESULT(WINAPI* DwmGetWindowAttributeFunc)(HWND hwnd,

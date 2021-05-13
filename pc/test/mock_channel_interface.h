@@ -46,7 +46,7 @@ class MockChannelInterface : public cricket::ChannelInterface {
                webrtc::SdpType,
                std::string*),
               (override));
-  MOCK_METHOD(void, SetPayloadTypeDemuxingEnabled, (bool), (override));
+  MOCK_METHOD(bool, SetPayloadTypeDemuxingEnabled, (bool), (override));
   MOCK_METHOD(const std::vector<StreamParams>&,
               local_streams,
               (),
@@ -59,6 +59,10 @@ class MockChannelInterface : public cricket::ChannelInterface {
               SetRtpTransport,
               (webrtc::RtpTransportInternal*),
               (override));
+  MOCK_METHOD(RtpHeaderExtensions,
+              GetNegotiatedRtpHeaderExtensions,
+              (),
+              (const));
 };
 
 }  // namespace cricket

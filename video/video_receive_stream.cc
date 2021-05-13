@@ -39,7 +39,6 @@
 #include "modules/video_coding/timing.h"
 #include "modules/video_coding/utility/vp8_header_parser.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/experiments/keyframe_interval_settings.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
@@ -60,7 +59,6 @@ constexpr int VideoReceiveStream::kMaxWaitForKeyFrameMs;
 
 namespace {
 
-using video_coding::EncodedFrame;
 using ReturnReason = video_coding::FrameBuffer::ReturnReason;
 
 constexpr int kMinBaseMinimumDelayMs = 0;
@@ -69,7 +67,7 @@ constexpr int kMaxBaseMinimumDelayMs = 10000;
 constexpr int kMaxWaitForFrameMs = 3000;
 
 // Concrete instance of RecordableEncodedFrame wrapping needed content
-// from video_coding::EncodedFrame.
+// from EncodedFrame.
 class WebRtcRecordableEncodedFrame : public RecordableEncodedFrame {
  public:
   explicit WebRtcRecordableEncodedFrame(const EncodedFrame& frame)
@@ -115,8 +113,6 @@ class WebRtcRecordableEncodedFrame : public RecordableEncodedFrame {
 
 VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
   VideoCodec codec;
-  memset(&codec, 0, sizeof(codec));
-
   codec.codecType = PayloadStringToCodecType(decoder.video_format.name);
 
   if (codec.codecType == kVideoCodecVP8) {
@@ -169,6 +165,11 @@ class NullVideoDecoder : public webrtc::VideoDecoder {
 
   int32_t Release() override { return WEBRTC_VIDEO_CODEC_OK; }
 
+  DecoderInfo GetDecoderInfo() const override {
+    DecoderInfo info;
+    info.implementation_name = "NullVideoDecoder";
+    return info;
+  }
   const char* ImplementationName() const override { return "NullVideoDecoder"; }
 };
 
@@ -218,12 +219,8 @@ VideoReceiveStream::VideoReceiveStream(
                                  config_.frame_decryptor,
                                  config_.frame_transformer),
       rtp_stream_sync_(this),
-      max_wait_for_keyframe_ms_(KeyframeIntervalSettings::ParseFromFieldTrials()
-                                    .MaxWaitForKeyframeMs()
-                                    .value_or(kMaxWaitForKeyFrameMs)),
-      max_wait_for_frame_ms_(KeyframeIntervalSettings::ParseFromFieldTrials()
-                                 .MaxWaitForFrameMs()
-                                 .value_or(kMaxWaitForFrameMs)),
+      max_wait_for_keyframe_ms_(kMaxWaitForKeyFrameMs),
+      max_wait_for_frame_ms_(kMaxWaitForFrameMs),
       decode_queue_(task_queue_factory_->CreateTaskQueue(
           "DecodingQueue",
           TaskQueueFactory::Priority::HIGH)) {
@@ -551,8 +548,7 @@ void VideoReceiveStream::RequestKeyFrame(int64_t timestamp_ms) {
   last_keyframe_request_ms_ = timestamp_ms;
 }
 
-void VideoReceiveStream::OnCompleteFrame(
-    std::unique_ptr<video_coding::EncodedFrame> frame) {
+void VideoReceiveStream::OnCompleteFrame(std::unique_ptr<EncodedFrame> frame) {
   RTC_DCHECK_RUN_ON(&network_sequence_checker_);
   // TODO(https://bugs.webrtc.org/9974): Consider removing this workaround.
   int64_t time_now_ms = clock_->TimeInMilliseconds();
@@ -636,17 +632,15 @@ void VideoReceiveStream::StartNextDecode() {
       [this](std::unique_ptr<EncodedFrame> frame, ReturnReason res) {
         RTC_DCHECK_EQ(frame == nullptr, res == ReturnReason::kTimeout);
         RTC_DCHECK_EQ(frame != nullptr, res == ReturnReason::kFrameFound);
-        decode_queue_.PostTask([this, frame = std::move(frame)]() mutable {
-          RTC_DCHECK_RUN_ON(&decode_queue_);
-          if (decoder_stopped_)
-            return;
-          if (frame) {
-            HandleEncodedFrame(std::move(frame));
-          } else {
-            HandleFrameBufferTimeout();
-          }
-          StartNextDecode();
-        });
+        RTC_DCHECK_RUN_ON(&decode_queue_);
+        if (decoder_stopped_)
+          return;
+        if (frame) {
+          HandleEncodedFrame(std::move(frame));
+        } else {
+          HandleFrameBufferTimeout();
+        }
+        StartNextDecode();
       });
 }
 
@@ -669,7 +663,7 @@ void VideoReceiveStream::HandleEncodedFrame(
       decode_result == WEBRTC_VIDEO_CODEC_OK_REQUEST_KEYFRAME) {
     keyframe_required_ = false;
     frame_decoded_ = true;
-    rtp_video_stream_receiver_.FrameDecoded(frame->id.picture_id);
+    rtp_video_stream_receiver_.FrameDecoded(frame->Id());
 
     if (decode_result == WEBRTC_VIDEO_CODEC_OK_REQUEST_KEYFRAME)
       RequestKeyFrame(now_ms);
@@ -682,7 +676,6 @@ void VideoReceiveStream::HandleEncodedFrame(
   }
 
   if (encoded_frame_buffer_function_) {
-    frame->Retain();
     encoded_frame_buffer_function_(WebRtcRecordableEncodedFrame(*frame));
   }
 }
