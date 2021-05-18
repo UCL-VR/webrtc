@@ -315,7 +315,7 @@ public class WebRtcAudioEffects {
     }
     for (Descriptor d : effects) {
       if (d.type.equals(effectType)) {
-        return false;
+        return true;
       }
     }
     return false;
