@@ -226,7 +226,7 @@ class WebRtcAudioEffects {
     }
     for (Descriptor d : effects) {
       if (d.type.equals(effectType)) {
-        return !d.uuid.equals(blockListedUuid);
+        return false;
       }
     }
     return false;
