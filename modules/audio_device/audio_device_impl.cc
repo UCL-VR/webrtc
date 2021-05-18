@@ -238,6 +238,7 @@ int32_t AudioDeviceModuleImpl::CreatePlatformSpecificObjects() {
     RTC_LOG(LS_ERROR) << "The requested audio layer is not supported";
     audio_device_.reset(nullptr);
   }
+  RTC_LOG(INFO) << "Android will use audio layer " << audio_layer;
 // END #if defined(WEBRTC_ANDROID)
 
 // Linux ADM implementation.
