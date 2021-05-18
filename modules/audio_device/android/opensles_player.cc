@@ -310,7 +310,7 @@ bool OpenSLESPlayer::CreateAudioPlayer() {
       false);
   // Set audio player configuration to SL_ANDROID_STREAM_VOICE which
   // corresponds to android.media.AudioManager.STREAM_VOICE_CALL.
-  SLint32 stream_type = SL_ANDROID_STREAM_VOICE;
+  SLint32 stream_type = SL_ANDROID_STREAM_MEDIA;
   RETURN_ON_ERROR(
       (*player_config)
           ->SetConfiguration(player_config, SL_ANDROID_KEY_STREAM_TYPE,
